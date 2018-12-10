@@ -1,0 +1,63 @@
+
+```{r}
+library(tigris)
+library(dplyr)
+library(sp)
+library(sf)
+library(maps)
+library(maptools)
+library(leaflet)
+library(rgdal)
+library(openintro)
+library(raster)
+library(htmlwidgets)
+library(viridis)
+library(data.table)
+```
+
+```{r}
+new50_df <- read.csv("mapdata.csv")
+new50_df$State <- state2abbr(new50_df$State)
+states = states(cb = FALSE, resolution = "500k", year = 2017)
+```
+
+```{r}
+# Now we use the Tigris function geo_join to bring together 
+# the states shapefile and the sb_states dataframe -- STUSPS and state 
+# are the two columns they'll be joined by
+
+states_merged_customer <- geo_join(states, new50_df, "STUSPS", "State", how = 'left')
+
+mybins=seq(0, max(new50_df$Customer_Count), by = 20)
+mypalette = colorBin( palette="YlOrBr", domain=states_merged_customer$Customer_Count, na.color="transparent", bins=mybins)
+
+mytext=paste("State: ", states_merged_customer$STUSPS,"<br/>", "Customer number: ", states_merged_customer$Customer_Count, "<br/>", sep="") %>%
+  lapply(htmltools::HTML)
+
+mytext2=paste("State: ", states_merged_customer$STUSPS,"<br/>", "Churn: ", states_merged_customer$Churn, "<br/>", sep="") %>%
+  lapply(htmltools::HTML)
+
+mytext3=paste("State: ", states_merged_customer$STUSPS,"<br/>", "Not churn: ", states_merged_customer$Not_Churn, "<br/>", sep="") %>%
+  lapply(htmltools::HTML)
+
+
+m <- leaflet(states_merged_customer) %>%
+  addTiles()  %>%
+  setView(lat=38.9, lng=-77.07 , zoom=2) %>%
+  addPolygons(
+     fillColor = ~mypalette(Customer_Count), stroke=TRUE, fillOpacity = 0.9, color="white",  label = mytext,
+    labelOptions = labelOptions( style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "13px", direction = "auto"), group = 'Customer') %>%   
+  addPolygons(
+     fillColor = ~mypalette(Churn), stroke=TRUE, fillOpacity = 0.9, color="white",  label = mytext2,
+    labelOptions = labelOptions( style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "13px", direction = "auto"), group = 'Churn')%>%
+  addPolygons(
+     fillColor = ~mypalette(Not_Churn), stroke=TRUE, fillOpacity = 0.9, color="white",  label = mytext3,
+    labelOptions = labelOptions( style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "13px", direction = "auto"), group = 'Not_churn')%>%
+    addLegend( pal=mypalette, values=~Customer_Count, opacity=0.9, title = "number of Customer", position = "bottomleft", group = 'Customer') %>% 
+  addLegend( pal=mypalette, values=~Churn,  opacity=0.9, title = "number of churn customer", position = "bottomleft", group = 'Churn') %>% 
+  addLegend( pal=mypalette, values=~Not_Churn,  opacity=0.9, title = "number of not churn customer", position = "bottomleft", group = 'Not_Churn') %>% 
+addLayersControl(baseGroups = c('Customer', "Churn", 'Not_Churn'), options = layersControlOptions(collapsed = FALSE))
+
+saveWidget(m, file= "leaflet.html")
+```
+
