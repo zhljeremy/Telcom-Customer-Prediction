@@ -1,0 +1,132 @@
+---
+title: "Network"
+author: "Jeremy"
+date: "12/10/2018"
+output: html_document
+---
+
+```{r}
+library(magrittr)
+library(tidyverse)
+library(shiny)
+library(data.table) # data mgmt
+library(gtools) # combination
+library(ggplot2) # graphics
+library(plotly) # interactive graphics
+library(e1071)
+library(caret)
+library(cowplot)
+library(caTools)
+library(pROC)
+library(MASS)
+library(car)
+```
+
+```{r}
+# data preparation
+
+# load the data
+df <- read.csv("WA_Fn-UseC_-Telco-Customer-Churn.csv")
+
+# remove rows with NAN values
+df <- df[complete.cases(df),]
+
+# Trun SeniorCitizen column to categorical 
+df$SeniorCitizen <- as.factor(ifelse(df$SeniorCitizen==1, 'YES', 'NO'))
+```
+
+```{r}
+# Cleaning the Categorical features
+df <- data.frame(lapply(df, function(x) {
+                  gsub("No internet service", "No", x)}))
+
+df <- data.frame(lapply(df, function(x) {
+                  gsub("No phone service", "No", x)}))
+
+# Standardising Continuous features
+num_columns <- c("tenure", "MonthlyCharges", "TotalCharges")
+df[num_columns] <- sapply(df[num_columns], as.numeric)
+
+df_int <- df[,c("tenure", "MonthlyCharges", "TotalCharges")]
+df_int <- data.frame(scale(df_int))
+
+# Creating derived features for tenure
+#max(df$tenure)
+#min(df$tenure)
+df <- mutate(df, tenure_bin = tenure)
+
+df$tenure_bin[df$tenure_bin >= 0 & df$tenure_bin <= 12] <- '0-1 year'
+df$tenure_bin[df$tenure_bin > 12 & df$tenure_bin <= 24] <- '1-2 years'
+df$tenure_bin[df$tenure_bin > 24 & df$tenure_bin <= 36] <- '2-3 years'
+df$tenure_bin[df$tenure_bin > 36 & df$tenure_bin <= 48] <- '3-4 years'
+df$tenure_bin[df$tenure_bin > 48 & df$tenure_bin <= 60] <- '4-5 years'
+df$tenure_bin[df$tenure_bin > 60 & df$tenure_bin <= 72] <- '5-6 years'
+
+df$tenure_bin <- as.factor(df$tenure_bin)
+
+# Creating Dummy Variables
+df_categorical <- df[,-c(1,6,19,20)]
+
+dummy<- data.frame(sapply(df_categorical,function(x) data.frame(model.matrix(~x-1,data =df_categorical))[,-1]))
+
+# Combining the data
+df_final <- cbind(df_int,dummy)
+
+# Splitting the data
+set.seed(666)
+Churn_train = sample.split(df_final$Churn, SplitRatio = 0.7)
+train = df_final[Churn_train,]
+test = df_final[!(Churn_train),]
+```
+
+```{r}
+df_cor <- df_final[,-c(25,26,27,28,29)]
+```
+
+
+```{r}
+customerTrends.mat <- as.matrix(df_cor)  # Drop first five columns
+customerTrends.mat <- prop.table(customerTrends.mat, margin = 2)  # column-wise pct
+```
+
+```{r}
+library(lsa) # for cosine similarity matrix
+simMatrix <- cosine(customerTrends.mat)
+diag(simMatrix) <- 0 # Remove relationship with self
+simMatrix %>% head() %>% knitr::kable() # Show first 6 rows
+```
+
+```{r}
+# Prune edges of the tree
+edgeLimit <- .010
+simMatrix[(simMatrix < edgeLimit)] <- 0
+```
+
+```{r}
+library(igraph)
+simIgraph <- graph_from_adjacency_matrix(simMatrix, 
+                                         mode = 'undirected', 
+                                         weighted = T)
+ceb <- cluster_edge_betweenness(simIgraph) # For community detection
+```
+
+```{r}
+library(networkD3)
+
+# Use igraph ceb to find membership
+members <- membership(ceb)
+
+# Convert to object suitable for networkD3
+simIgraph_d3 <- igraph_to_networkD3(simIgraph, group = members)
+
+# Create force directed network plot
+nw <- forceNetwork(Links = simIgraph_d3$links, Nodes = simIgraph_d3$nodes, 
+             Source = 'source', Target = 'target', 
+             NodeID = 'name', Group = 'group', 
+             fontSize = 16, fontFamily = 'Arial', linkDistance = 100,
+             zoom = TRUE)
+```
+
+```{r}
+htmlwidgets::saveWidget(as_widget(nw), "network.html")
+```
