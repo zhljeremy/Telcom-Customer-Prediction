@@ -28,7 +28,7 @@ states = states(cb = FALSE, resolution = "500k", year = 2017)
 
 states_merged_customer <- geo_join(states, new50_df, "STUSPS", "State", how = 'left')
 
-mybins=seq(0, max(new50_df$Customer_Count), by = 20)
+mybins=seq(0, max(new50_df$Customer_Count), by = 40)
 mypalette = colorBin( palette="YlOrBr", domain=states_merged_customer$Customer_Count, na.color="transparent", bins=mybins)
 
 mytext=paste("State: ", states_merged_customer$STUSPS,"<br/>", "Customer number: ", states_merged_customer$Customer_Count, "<br/>", sep="") %>%
